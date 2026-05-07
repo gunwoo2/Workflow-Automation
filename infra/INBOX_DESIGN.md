@@ -61,7 +61,7 @@
 
 ## 3. Telegram 봇 / 그룹 구조
 
-### 3.1 [D-1] 봇 분할 전략 — **권장: 옵션 A**
+### 3.1 [D-1] 봇 분할 전략 — **✅ 확정: 옵션 A** (2026-05-07)
 
 #### 옵션 A. 봇 1개 + 1:1 chat (권장)
 ```
@@ -96,7 +96,7 @@
 - **장점**: 봇별 알림 설정 분리. 알람은 소리, raw는 무음.
 - **단점**: 봇 3개 관리, BotFather 세팅 3번, n8n credential 3개.
 
-**[D-1] 사용자 선택 → ?** (권장 A)
+**[D-1] ✅ 옵션 A 확정** — 봇 `@lifeos_bot` 1개, 1:1 chat. 알람은 hashtag로 시각 분리.
 
 ### 3.2 알람 hashtag 컨벤션 (옵션 A 채택 시)
 
@@ -246,7 +246,7 @@ last input: IBX-20260507-0042 (Telegram msg 8932)
 | < 0.70 | status `pending_confirm` → 즉시 컨펌 큐 알람 (#confirm) |
 | 분류 실패 (LLM 에러) | status `failed` → #system 알람 |
 
-### 6.2 [D-2] 컨펌 UX — **권장: 옵션 A**
+### 6.2 [D-2] 컨펌 UX — **✅ 확정: 옵션 A** (2026-05-07)
 
 #### 옵션 A. Telegram inline button (권장)
 - 즉시성: 메시지에서 바로 [✅] [✏️] [🗑️] 버튼 클릭
@@ -263,9 +263,9 @@ last input: IBX-20260507-0042 (Telegram msg 8932)
 - 처리 안 한 것은 다음 데일리 브리핑에 카운트로 표시 → 노션 뷰로 batch
 - 가장 유연하나 구현 복잡
 
-**[D-2] 사용자 선택 → ?** (권장 A로 시작, 사용 패턴 보고 C로 확장)
+**[D-2] ✅ 옵션 A 확정** — Telegram inline button (✅ / ✏️ / 🗑️). 복잡 수정은 노션 점프. 사용 패턴 보고 차후 C로 확장 검토.
 
-### 6.3 [D-3] 자동 라우팅 보수성 — **권장: 옵션 B**
+### 6.3 [D-3] 자동 라우팅 보수성 — **✅ 확정: 옵션 B** (2026-05-07)
 
 confidence ≥ 0.85여도 일부 행동은 비가역적. 어디까지 자동으로?
 
@@ -283,7 +283,7 @@ confidence ≥ 0.85여도 일부 행동은 비가역적. 어디까지 자동으�
 - 모든 fan-out 액션을 사용자 컨펌 후 실행
 - 안전하나 자동화 가치 떨어짐
 
-**[D-3] 사용자 선택 → ?** (권장 B)
+**[D-3] ✅ 옵션 B 확정** — existing entity 라우팅은 자동 (`routed_to_*` 추가). 신규 Project / Risk 생성은 항상 컨펌 큐. 신규 Task / Deliverable / Meeting은 자동 (archive 비용 낮음).
 
 ---
 
@@ -302,7 +302,7 @@ confidence ≥ 0.85여도 일부 행동은 비가역적. 어디까지 자동으�
 - 권장: **신규 Project/Risk는 직접 추가 금지** — 항상 new-project SKILL
   또는 Inbox 경유 (PK 시퀀스 보장)
 
-### 7.3 [D-4] 노션 webhook vs polling — **권장: 옵션 B**
+### 7.3 [D-4] 노션 webhook vs polling — **✅ 확정: 옵션 B** (2026-05-07)
 
 #### 옵션 A. Notion 공식 webhook (현재 베타)
 - 노션 → n8n webhook URL 구독
@@ -314,7 +314,7 @@ confidence ≥ 0.85여도 일부 행동은 비가역적. 어디까지 자동으�
 - 단순. 무료 플랜에서도 동작.
 - 5분 지연 허용 가능 (인박스는 비동기 영역)
 
-**[D-4] 사용자 선택 → ?** (권장 B)
+**[D-4] ✅ 옵션 B 확정** — 5분 cron polling. `infra/n8n/notion_inbox_poll.json`이 `created_time > last_check_at` 필터로 조회.
 
 ---
 
@@ -373,20 +373,29 @@ source_message_id 또는 (source_type, source_account, source_message_id)
 
 ---
 
-## 11. 결정 큐 (사용자가 답변할 곳)
+## 11. 결정 큐 — 모두 확정 (2026-05-07)
 
-다음 항목 답해주시면 §3.1 / §6.2 / §6.3 / §7.3 디테일을 확정하고
-n8n 워크플로우 JSON들을 그에 맞춰 일괄 생성합니다.
-
-| 마커 | 위치 | 권장 | 사용자 답변 |
+| 마커 | 위치 | 확정 | 비고 |
 |---|---|---|---|
-| **D-1** | §3.1 봇 분할 전략 | A (1봇 + 1:1) | _____ |
-| **D-2** | §6.2 컨펌 UX | A (Telegram inline button) | _____ |
-| **D-3** | §6.3 자동 라우팅 보수성 | B (existing 자동, 신규는 컨펌) | _____ |
-| **D-4** | §7.3 노션 webhook vs polling | B (5분 polling) | _____ |
+| **D-1** | §3.1 봇 분할 전략 | **A** — 봇 1개 + 1:1 chat | hashtag 컨벤션(§3.2)으로 시각 분리 |
+| **D-2** | §6.2 컨펌 UX | **A** — Telegram inline button | 복잡 수정은 노션 점프 |
+| **D-3** | §6.3 자동 라우팅 | **B** — existing 자동, 신규 P/R 컨펌 | Task/Deliv/Meeting 신규는 자동 OK |
+| **D-4** | §7.3 노션 감지 | **B** — 5분 polling | webhook은 Phase 2+ 재검토 |
 
-추가로 권장에서 벗어나는 디자인 의견(예: "데일리 브리핑은 07:30이 좋겠어",
-"#urgent 알람은 따로 봇으로 받고 싶다") 있으면 함께 알려주세요.
+### 후속 작업 (확정 결정 기반)
+
+확정안에 맞춰 Phase 1 MVP에 필요한 n8n 워크플로우 JSON 5개를 작성한다
+(사용자가 n8n 셋업 완료 후 import + 검증):
+
+1. `infra/n8n/notion_inbox_poll.json` — D-4: 노션 직접 입력 polling
+2. `infra/n8n/daily_briefing.json` — §4.1: 매일 08:00 브리핑
+3. `infra/n8n/meeting_alert.json` — §4.2: 회의 15분 전 알람
+4. `infra/n8n/risk_alert.json` — §4.4: High Risk 신규 알람
+5. `infra/n8n/confirm_callback.json` — D-2: Telegram inline button 콜백
+
+추가 분류·라우팅 로직(§5 매트릭스, §6.1 임계값, §6.3 신규 P/R 컨펌
+하드 록)은 별도 SKILL `inbox-classify`로 분리한다 (Hermes 통합 시 단일
+진입점).
 
 ---
 
@@ -406,3 +415,4 @@ n8n 워크플로우 JSON들을 그에 맞춰 일괄 생성합니다.
 | 버전 | 날짜 | 변경 |
 |---|---|---|
 | v0.1 | 2026-05-07 | 초안 — 채널 카탈로그 / 봇 구조 / 알람 / 라우팅 / 컨펌 흐름. [D-1]~[D-4] 결정 대기. |
+| v0.2 | 2026-05-07 | [D-1]=A, [D-2]=A, [D-3]=B, [D-4]=B 확정. 후속 워크플로우 JSON 5개 작업 큐 등록. |

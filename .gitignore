@@ -1,0 +1,24 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Notion runtime artifacts
+.notion/db_ids.json
+.notion/cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

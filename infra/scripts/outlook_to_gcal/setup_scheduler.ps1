@@ -14,6 +14,8 @@
 param(
     [int]$IntervalMinutes = 30,
     [int]$DaysAhead       = 7,
+    [switch]$IncludePastDay,
+    [switch]$SkipTasks,
     [switch]$Unregister
 )
 
@@ -40,8 +42,10 @@ if (-not (Test-Path $runPath)) {
     exit 1
 }
 
-# --- Build action: powershell.exe -File run.ps1 -DaysAhead N (silent window) ---
+# --- Build action: powershell.exe -File run.ps1 -DaysAhead N [opt flags] ---
 $pwshArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$runPath`" -DaysAhead $DaysAhead"
+if ($IncludePastDay) { $pwshArgs += " -IncludePastDay" }
+if ($SkipTasks)      { $pwshArgs += " -SkipTasks" }
 $action   = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $pwshArgs
 
 # --- Build trigger: start at next minute boundary, repeat every N min for ~10y ---

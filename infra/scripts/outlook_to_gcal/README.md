@@ -113,12 +113,20 @@ cd C:\Users\HHI\Desktop\Workflow automation\infra\scripts\outlook_to_gcal
 # 30분 간격으로 향후 7일치 동기화 (default)
 .\setup_scheduler.ps1
 
-# 15분 간격, 14일치
-.\setup_scheduler.ps1 -IntervalMinutes 15 -DaysAhead 14
+# 30분 간격, 14일치, 오늘 자정부터 (오늘 회의 포함)
+.\setup_scheduler.ps1 -DaysAhead 14 -IncludePastDay
+
+# 15분 간격
+.\setup_scheduler.ps1 -IntervalMinutes 15
+
+# 일정만 (tasks 제외)
+.\setup_scheduler.ps1 -SkipTasks
 
 # 등록 해제
 .\setup_scheduler.ps1 -Unregister
 ```
+
+설정 변경 시 같은 명령으로 재실행하면 기존 task 자동 교체됨.
 
 ### 등록 후 확인
 ```powershell

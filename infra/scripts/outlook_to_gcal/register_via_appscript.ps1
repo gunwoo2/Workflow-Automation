@@ -70,11 +70,23 @@ if ($DryRun) {
     return
 }
 
+# Apps Script issues a 302 to script.googleusercontent.com; Invoke-RestMethod
+# loses the POST body across the redirect on some PowerShell builds, so we
+# use Invoke-WebRequest with explicit MaximumRedirection and parse manually.
 try {
-    $resp = Invoke-RestMethod -Method Post -Uri "$WebAppUrl`?token=$Token" `
-        -Body $body -ContentType "application/json; charset=utf-8"
+    $rawResp = Invoke-WebRequest -Method Post -Uri "$WebAppUrl`?token=$Token" `
+        -Body $body -ContentType "application/json; charset=utf-8" `
+        -MaximumRedirection 5
 } catch {
     Write-Host "[error] HTTP 요청 실패: $($_.Exception.Message)" -ForegroundColor Red
+    exit 1
+}
+
+try {
+    $resp = $rawResp.Content | ConvertFrom-Json
+} catch {
+    Write-Host "[error] 응답이 JSON이 아님 (배포 액세스 권한이 'Anyone'인지 확인):" -ForegroundColor Red
+    Write-Host $rawResp.Content.Substring(0, [Math]::Min(300, $rawResp.Content.Length))
     exit 1
 }
 
@@ -85,7 +97,7 @@ if (-not $resp.ok) {
 
 $c = $resp.counters
 Write-Host ""
-Write-Host "Done: new=$($c.new) updated=$($c.upd) skipped=$($c.skip) errors=$($c.err)" -ForegroundColor Green
+Write-Host "Done: new=$($c.newCount) updated=$($c.updCount) skipped=$($c.skipCount) errors=$($c.errCount)" -ForegroundColor Green
 
 if ($resp.errors -and @($resp.errors).Count -gt 0) {
     Write-Host "Errors:" -ForegroundColor Yellow

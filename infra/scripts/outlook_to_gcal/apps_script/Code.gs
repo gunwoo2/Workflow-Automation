@@ -1,17 +1,15 @@
-// Life OS — Outlook → Google Calendar (Apps Script Web App receiver)
+// Life OS - Outlook to Google Calendar (Apps Script Web App receiver).
+// PowerShell POSTs events.json; this upserts them to the deployer's
+// Google Calendar. Idempotent via (subject + start +/- 60s) match because
+// CalendarApp does not expose extendedProperties for direct lookup.
 //
-// PowerShell이 events.json을 POST하면 본인 Google Calendar에 멱등 upsert.
-// 배포 절차는 이 디렉터리 README.md 참조.
-//
-// 보안: SHARED_SECRET이 1차 방어선. URL이 길어서 추측은 어렵지만
-// 노출 시 누구나 본인 캘린더에 쓸 수 있음 → secret + URL 둘 다 비밀 유지.
+// Deploy as Web App: execute as Me, access "Anyone".
+// Replace SHARED_SECRET below with a 32+ char random string and put the
+// same value in .env GCAL_APPSCRIPT_TOKEN.
 
-// ⚠️  배포 전 다음 두 값을 본인 것으로 교체:
-const SHARED_SECRET = 'CHANGE_ME_TO_A_LONG_RANDOM_STRING';  // 32자 이상 랜덤 문자열 권장
-const CAL_ID        = 'primary';                             // 또는 user@gmail.com / 캘린더 ID
+const SHARED_SECRET = 'CHANGE_ME_TO_A_LONG_RANDOM_STRING';
+const CAL_ID = 'primary';
 
-
-// ---------- Entry points ----------
 
 function doPost(e) {
   const auth = (e && e.parameter && e.parameter.token) || '';
@@ -34,14 +32,14 @@ function doPost(e) {
   }
 
   const events = (payload && payload.events) || [];
-  const counters = { new: 0, upd: 0, skip: 0, err: 0 };
+  const counters = { newCount: 0, updCount: 0, skipCount: 0, errCount: 0 };
   const errors = [];
 
   for (let i = 0; i < events.length; i++) {
     try {
       _upsertOne(cal, events[i], counters);
     } catch (err) {
-      counters.err++;
+      counters.errCount++;
       errors.push({ subject: events[i].subject || '?', error: String(err) });
     }
   }
@@ -50,32 +48,27 @@ function doPost(e) {
     ok: true,
     received: events.length,
     counters: counters,
-    errors: errors,
+    errors: errors
   });
 }
+
 
 function doGet(e) {
-  // Health check / 배포 검증용. POST 안 받음.
   return _json({
     ok: true,
-    message: 'POST events.json with ?token=<SHARED_SECRET> to upsert.',
-    calendar: CAL_ID,
+    message: 'POST events with ?token=SHARED_SECRET to upsert',
+    calendar: CAL_ID
   });
 }
 
-
-// ---------- Core ----------
 
 function _upsertOne(cal, ev, counters) {
   const subject = ev.subject || '(no title)';
   const start = new Date(ev.start);
   const end = new Date(ev.end);
 
-  // Apps Script CalendarApp은 extendedProperties 직접 노출이 약함 →
-  // (subject + start ±60초) 매칭으로 idempotent. 같은 분에 같은 제목
-  // 회의 두 개 거의 없음.
   const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0);
-  const dayEnd   = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59);
+  const dayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59);
   const candidates = cal.getEvents(dayStart, dayEnd);
 
   let existing = null;
@@ -92,27 +85,25 @@ function _upsertOne(cal, ev, counters) {
     const desc = ev.body || '';
     const loc = ev.location || '';
     if (existing.getDescription() !== desc) { existing.setDescription(desc); changed = true; }
-    if (existing.getLocation() !== loc)     { existing.setLocation(loc);     changed = true; }
+    if (existing.getLocation() !== loc) { existing.setLocation(loc); changed = true; }
     if (existing.getEndTime().getTime() !== end.getTime()) {
       existing.setTime(start, end);
       changed = true;
     }
-    if (changed) counters.upd++; else counters.skip++;
+    if (changed) counters.updCount++; else counters.skipCount++;
   } else {
     if (ev.is_all_day) {
       cal.createAllDayEvent(subject, start);
     } else {
       cal.createEvent(subject, start, end, {
         description: ev.body || '',
-        location: ev.location || '',
+        location: ev.location || ''
       });
     }
-    counters.new++;
+    counters.newCount++;
   }
 }
 
-
-// ---------- Helpers ----------
 
 function _json(obj) {
   return ContentService

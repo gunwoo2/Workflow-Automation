@@ -1,18 +1,20 @@
 # Outlook → Google Calendar 한 사이클 실행 (extract + register).
-# 회사 PC에서 실행. 첫 실행은 register 단계에서 OAuth 브라우저 열림.
+# default: Apps Script Web App 패턴 (OAuth/Cloud Console 우회).
+# -UseOAuth 플래그를 주면 Python + Cloud Console OAuth 패턴 사용.
 #
 # 사용:
-#   .\run.ps1                           # 향후 14일, events만
+#   .\run.ps1                           # 향후 14일, Apps Script로 등록
 #   .\run.ps1 -DaysAhead 30              # 향후 30일
 #   .\run.ps1 -IncludeTasks              # tasks 추출까지 (등록은 events만)
-#   .\run.ps1 -DryRun                    # Google API 호출 없이 시뮬레이션
-#   .\run.ps1 -CalendarId user@gmail.com # primary 외 캘린더 지정
+#   .\run.ps1 -DryRun                    # 실제 등록 없이 시뮬레이션
+#   .\run.ps1 -UseOAuth                  # Apps Script 대신 Python OAuth 패턴
 
 param(
     [int]$DaysAhead = 14,
     [switch]$IncludeTasks,
     [switch]$IncludePastDay,
     [switch]$DryRun,
+    [switch]$UseOAuth,
     [string]$CalendarId = "primary"
 )
 
@@ -28,7 +30,16 @@ if ($IncludePastDay) { $extractArgs += "-IncludePastDay" }
 
 Write-Host ""
 Write-Host "=== 2. Register to Google Calendar ===" -ForegroundColor Cyan
-$env:PYTHONIOENCODING = "utf-8"
-$pyArgs = @((Join-Path $scriptDir "register_to_gcal.py"), $jsonPath, "--calendar-id", $CalendarId)
-if ($DryRun) { $pyArgs += "--dry-run" }
-python @pyArgs
+
+if ($UseOAuth) {
+    Write-Host "  (mode: Python OAuth Cloud Console)" -ForegroundColor DarkGray
+    $env:PYTHONIOENCODING = "utf-8"
+    $pyArgs = @((Join-Path $scriptDir "register_to_gcal.py"), $jsonPath, "--calendar-id", $CalendarId)
+    if ($DryRun) { $pyArgs += "--dry-run" }
+    python @pyArgs
+} else {
+    Write-Host "  (mode: Apps Script Web App)" -ForegroundColor DarkGray
+    $appsArgs = @("-JsonPath", $jsonPath)
+    if ($DryRun) { $appsArgs += "-DryRun" }
+    & (Join-Path $scriptDir "register_via_appscript.ps1") @appsArgs
+}

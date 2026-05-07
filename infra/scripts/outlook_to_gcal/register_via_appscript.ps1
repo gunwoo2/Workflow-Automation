@@ -1,10 +1,10 @@
-# events.json을 Apps Script Web App에 POST해서 본인 Google Calendar에 등록.
-# OAuth / Cloud Console 우회 패턴. shared secret으로 endpoint 보호.
+# POST events.json to the Apps Script Web App which upserts to Google Calendar.
+# Bypasses Cloud Console / OAuth — only a shared secret + URL needed.
 #
-# 사전 셋업: apps_script/README.md
-# 환경 변수 (둘 다 필수):
-#   GCAL_APPSCRIPT_URL    배포 URL  (https://script.google.com/macros/s/.../exec)
-#   GCAL_APPSCRIPT_TOKEN  Code.gs의 SHARED_SECRET과 동일 값
+# Setup:    apps_script/README.md
+# Required env vars (or pass as -WebAppUrl / -Token):
+#   GCAL_APPSCRIPT_URL    deployed URL  (https://script.google.com/macros/s/.../exec)
+#   GCAL_APPSCRIPT_TOKEN  same value as SHARED_SECRET in Code.gs
 
 param(
     [string]$JsonPath,
@@ -15,12 +15,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# UTF-8 출력
+# UTF-8 console output (events / errors may contain Korean / non-ASCII).
 $OutputEncoding = New-Object System.Text.UTF8Encoding $false
 [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
 
-# .env 파일에서 변수 로드 (없으면 시스템 env 사용)
-function Load-DotEnv($path) {
+# Minimal .env loader. Falls back to process env vars if the file is absent.
+function Import-DotEnv($path) {
     if (-not (Test-Path $path)) { return }
     Get-Content $path | ForEach-Object {
         $line = $_.Trim()
@@ -36,56 +36,56 @@ function Load-DotEnv($path) {
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot  = Resolve-Path (Join-Path $scriptDir "..\..\..") | Select-Object -ExpandProperty Path
-Load-DotEnv (Join-Path $repoRoot ".env")
+Import-DotEnv (Join-Path $repoRoot ".env")
 
 if (-not $WebAppUrl) { $WebAppUrl = $env:GCAL_APPSCRIPT_URL }
 if (-not $Token)     { $Token     = $env:GCAL_APPSCRIPT_TOKEN }
 if (-not $JsonPath)  { $JsonPath  = Join-Path $scriptDir "events.json" }
 
 if (-not $WebAppUrl -or -not $Token) {
-    Write-Host "[error] GCAL_APPSCRIPT_URL / GCAL_APPSCRIPT_TOKEN 미설정." -ForegroundColor Red
-    Write-Host "        .env 또는 환경변수에 설정. apps_script/README.md §3 참조." -ForegroundColor Red
+    Write-Host "[error] GCAL_APPSCRIPT_URL / GCAL_APPSCRIPT_TOKEN missing." -ForegroundColor Red
+    Write-Host "        Set them in .env or as env vars. See apps_script/README.md." -ForegroundColor Red
     exit 1
 }
 if (-not (Test-Path $JsonPath)) {
-    Write-Host "[error] $JsonPath 없음. extract_events.ps1 먼저 실행." -ForegroundColor Red
+    Write-Host "[error] $JsonPath not found. Run extract_events.ps1 first." -ForegroundColor Red
     exit 1
 }
 
-# Read JSON (UTF-8)
+# Read JSON as UTF-8 (preserves Korean characters in payload).
 $body = [System.IO.File]::ReadAllText($JsonPath, [System.Text.Encoding]::UTF8)
 
-# Sanity preview
+# Parse for sanity preview (size, dry-run listing).
 $payload = $body | ConvertFrom-Json
 $evCount = if ($payload.events) { @($payload.events).Count } else { 0 }
 Write-Host "Posting $evCount events to Apps Script Web App..." -ForegroundColor Cyan
-Write-Host "  url:     $WebAppUrl"
-Write-Host "  events:  $evCount"
+Write-Host "  url:    $WebAppUrl"
+Write-Host "  events: $evCount"
 
 if ($DryRun) {
-    Write-Host "  (dry run — POST 안 함)" -ForegroundColor Yellow
+    Write-Host "  (dry run - skipping POST)" -ForegroundColor Yellow
     $payload.events | Select-Object -First 5 | ForEach-Object {
-        Write-Host "    [dry] $($_.subject) $($_.start) → $($_.end)"
+        Write-Host ("    [dry] {0}  {1} -> {2}" -f $_.subject, $_.start, $_.end)
     }
     return
 }
 
-# Apps Script issues a 302 to script.googleusercontent.com; Invoke-RestMethod
-# loses the POST body across the redirect on some PowerShell builds, so we
-# use Invoke-WebRequest with explicit MaximumRedirection and parse manually.
+# Apps Script issues a 302 to script.googleusercontent.com. Invoke-RestMethod
+# loses the POST body across that redirect on some PowerShell builds, so use
+# Invoke-WebRequest with explicit MaximumRedirection and parse manually.
 try {
     $rawResp = Invoke-WebRequest -Method Post -Uri "$WebAppUrl`?token=$Token" `
         -Body $body -ContentType "application/json; charset=utf-8" `
         -MaximumRedirection 5
 } catch {
-    Write-Host "[error] HTTP 요청 실패: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "[error] HTTP request failed: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
 
 try {
     $resp = $rawResp.Content | ConvertFrom-Json
 } catch {
-    Write-Host "[error] 응답이 JSON이 아님 (배포 액세스 권한이 'Anyone'인지 확인):" -ForegroundColor Red
+    Write-Host "[error] Response is not JSON. Verify the deployment's 'Who has access' is set to 'Anyone'." -ForegroundColor Red
     Write-Host $rawResp.Content.Substring(0, [Math]::Min(300, $rawResp.Content.Length))
     exit 1
 }
@@ -97,9 +97,9 @@ if (-not $resp.ok) {
 
 $c = $resp.counters
 Write-Host ""
-Write-Host "Done: new=$($c.newCount) updated=$($c.updCount) skipped=$($c.skipCount) errors=$($c.errCount)" -ForegroundColor Green
+Write-Host ("Done: new={0} updated={1} skipped={2} errors={3}" -f $c.newCount, $c.updCount, $c.skipCount, $c.errCount) -ForegroundColor Green
 
 if ($resp.errors -and @($resp.errors).Count -gt 0) {
     Write-Host "Errors:" -ForegroundColor Yellow
-    $resp.errors | ForEach-Object { Write-Host "  $($_.subject): $($_.error)" }
+    $resp.errors | ForEach-Object { Write-Host ("  {0}: {1}" -f $_.subject, $_.error) }
 }

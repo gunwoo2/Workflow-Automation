@@ -23,10 +23,16 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $jsonPath  = Join-Path $scriptDir "events.json"
 
 Write-Host "=== 1. Extract from Outlook ===" -ForegroundColor Cyan
-$extractArgs = @("-DaysAhead", $DaysAhead, "-OutFile", $jsonPath)
-if ($IncludeTasks)   { $extractArgs += "-IncludeTasks" }
-if ($IncludePastDay) { $extractArgs += "-IncludePastDay" }
-& (Join-Path $scriptDir "extract_events.ps1") @extractArgs
+$extractScript = Join-Path $scriptDir "extract_events.ps1"
+# Hashtable splat for named-parameter binding (array splat treats hyphen-prefixed
+# strings as positional values on some PowerShell builds → 'DaysAhead' cast error).
+$extractParams = @{
+    DaysAhead = $DaysAhead
+    OutFile   = $jsonPath
+}
+if ($IncludeTasks)   { $extractParams.IncludeTasks   = $true }
+if ($IncludePastDay) { $extractParams.IncludePastDay = $true }
+& $extractScript @extractParams
 
 Write-Host ""
 Write-Host "=== 2. Register to Google Calendar ===" -ForegroundColor Cyan
@@ -34,12 +40,14 @@ Write-Host "=== 2. Register to Google Calendar ===" -ForegroundColor Cyan
 if ($UseOAuth) {
     Write-Host "  (mode: Python OAuth Cloud Console)" -ForegroundColor DarkGray
     $env:PYTHONIOENCODING = "utf-8"
+    # Python is a native exe — array splat / positional flags are fine.
     $pyArgs = @((Join-Path $scriptDir "register_to_gcal.py"), $jsonPath, "--calendar-id", $CalendarId)
     if ($DryRun) { $pyArgs += "--dry-run" }
     python @pyArgs
 } else {
     Write-Host "  (mode: Apps Script Web App)" -ForegroundColor DarkGray
-    $appsArgs = @("-JsonPath", $jsonPath)
-    if ($DryRun) { $appsArgs += "-DryRun" }
-    & (Join-Path $scriptDir "register_via_appscript.ps1") @appsArgs
+    $registerScript = Join-Path $scriptDir "register_via_appscript.ps1"
+    $registerParams = @{ JsonPath = $jsonPath }
+    if ($DryRun) { $registerParams.DryRun = $true }
+    & $registerScript @registerParams
 }

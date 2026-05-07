@@ -7,6 +7,11 @@
 .notion/db_ids.json
 .notion/cache/
 
+# Outlook → Google Calendar runtime (회의 정보 + OAuth secrets)
+infra/scripts/outlook_to_gcal/credentials.json
+infra/scripts/outlook_to_gcal/token.json
+infra/scripts/outlook_to_gcal/events.json
+
 # Python
 __pycache__/
 *.py[cod]

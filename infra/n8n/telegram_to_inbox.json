@@ -1,0 +1,203 @@
+{
+  "name": "Telegram → Notion Inbox",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": ["message"],
+        "additionalFields": {}
+      },
+      "id": "telegram-trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CRED_ID",
+          "name": "Telegram Life OS"
+        }
+      },
+      "webhookId": "telegram-webhook-life-os"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "chat-id-match",
+              "leftValue": "={{ $json.message.chat.id }}",
+              "rightValue": "={{ $env.TELEGRAM_CHAT_ID }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-chat-id",
+      "name": "Filter Owner Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build a Life OS Inbox record from a Telegram message.\n// PK pattern: IBX-YYYYMMDD-NNNN. NNNN here uses a per-day in-memory\n// counter via static data; n8n persists this across executions.\nconst staticData = $getWorkflowStaticData('global');\nconst msg = $input.item.json.message;\nconst received = new Date(msg.date * 1000);\nconst yyyymmdd = received.toISOString().slice(0, 10).replace(/-/g, '');\n\nstaticData.inboxCounters = staticData.inboxCounters || {};\nstaticData.inboxCounters[yyyymmdd] = (staticData.inboxCounters[yyyymmdd] || 0) + 1;\nconst seq = String(staticData.inboxCounters[yyyymmdd]).padStart(4, '0');\nconst pk = `IBX-${yyyymmdd}-${seq}`;\n\nconst raw = msg.text || msg.caption || '[non-text message]';\nconst name = raw.slice(0, 30);\n\nreturn {\n  json: {\n    pk,\n    name,\n    description: raw,\n    received_at: received.toISOString(),\n    source_account: msg.from && msg.from.username ? msg.from.username : String(msg.from && msg.from.id || ''),\n    source_message_id: String(msg.message_id),\n    source_url: ''\n  }\n};"
+      },
+      "id": "build-record",
+      "name": "Build Inbox Record",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 280]
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "databaseId": {
+          "__rl": true,
+          "value": "={{ $env.NOTION_INBOX_DB_ID }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "pk|title",
+              "title": "={{ $json.pk }}"
+            },
+            {
+              "key": "name|rich_text",
+              "textContent": "={{ $json.name }}"
+            },
+            {
+              "key": "description|rich_text",
+              "textContent": "={{ $json.description }}"
+            },
+            {
+              "key": "status|select",
+              "selectValue": "raw"
+            },
+            {
+              "key": "source_type|select",
+              "selectValue": "telegram"
+            },
+            {
+              "key": "source_account|rich_text",
+              "textContent": "={{ $json.source_account }}"
+            },
+            {
+              "key": "source_message_id|rich_text",
+              "textContent": "={{ $json.source_message_id }}"
+            },
+            {
+              "key": "received_at|date",
+              "date": "={{ $json.received_at }}"
+            }
+          ]
+        }
+      },
+      "id": "create-inbox-row",
+      "name": "Create Inbox Row",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [900, 280],
+      "credentials": {
+        "notionApi": {
+          "id": "REPLACE_WITH_NOTION_CRED_ID",
+          "name": "Notion Life OS"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "=📥 Inbox 등록: {{ $('Build Inbox Record').item.json.pk }}",
+        "additionalFields": {
+          "reply_to_message_id": "={{ $('Telegram Trigger').item.json.message.message_id }}"
+        }
+      },
+      "id": "ack-reply",
+      "name": "Ack Reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1120, 280],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CRED_ID",
+          "name": "Telegram Life OS"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter Owner Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Owner Only": {
+      "main": [
+        [
+          {
+            "node": "Build Inbox Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Inbox Record": {
+      "main": [
+        [
+          {
+            "node": "Create Inbox Row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Inbox Row": {
+      "main": [
+        [
+          {
+            "node": "Ack Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "saveExecutionProgress": false,
+    "saveManualExecutions": true,
+    "timezone": "Asia/Seoul"
+  },
+  "tags": [
+    {"name": "life-os"},
+    {"name": "phase-1"}
+  ],
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "versionId": "1.0.0"
+}

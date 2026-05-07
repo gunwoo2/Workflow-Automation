@@ -116,19 +116,10 @@ IBX-YYYYMMDD-NNNN  Inbox
 
 ## 4. ?? ���� ? ��� ��ū ��� ������Ʈ
 
-�� web ���� ä�ÿ� **��� Integration Token�� ����**�ƽ��ϴ�:
-```
-ntn_<REDACTED — see local secret store / rotate before reuse>
-```
+Notion Integration Token�� ���� ���ǿ��� ���� (1Password, .env ��)���� �������ϼ���.
+������ �÷��� ä�ð� ������ �ʿ� ���� ���� ��ū ��� ��õ.
 
-��ȭ �αװ� Anthropic ������ ����� ���ɼ� + ���� ���ǿ��� ������ ���� �� **�ݵ�� ������Ʈ**:
-
-1. https://www.notion.so/profile/integrations
-2. �ش� ����(Life OS Bot �Ǵ� ����� �̸�) Ŭ��
-3. "Rotate token" �Ǵ� ���� ���� �� �����
-4. �� ��ū ������ ���� ���� (1Password, .env ��)
-
-������ ID�� �����ŵ� ���� (token ������ ����):
+������ ID (���� ���� �ƴ�):
 ```
 PARENT_PAGE_ID = 3597221afa4880ce8305cbe42a7468ff
 PARENT_PAGE_URL = https://www.notion.so/Life-OS-3597221afa4880ce8305cbe42a7468ff

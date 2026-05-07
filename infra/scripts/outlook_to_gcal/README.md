@@ -20,15 +20,21 @@
 
 | 파일 | 역할 |
 |---|---|
-| `extract_events.ps1` | Outlook COM으로 일정 + (옵션) Tasks 추출 → `events.json` |
-| `register_via_appscript.ps1` | **(default)** `events.json` → Apps Script Web App POST |
+| `extract_events.ps1` | Outlook COM으로 일정 + Tasks 추출 → `events.json` |
+| `register_via_appscript.ps1` | **(default)** `events.json` → Apps Script Web App POST. Tasks는 `[Task] subject` all-day event로 변환해서 같이 등록 |
 | `register_to_gcal.py` | (alt) `events.json` → Google Calendar API (OAuth) |
-| `run.ps1` | extract + register 한 번에 (default = Apps Script) |
+| `run.ps1` | extract + register 한 번에. default = Apps Script + tasks 포함 |
+| `setup_scheduler.ps1` | Windows 스케줄러에 `run.ps1` 등록 (default 30분 간격) |
 | `apps_script/Code.gs` | Apps Script Web App 수신부. script.google.com에 배포 |
 | `apps_script/README.md` | Apps Script 배포 절차 |
 | `events.json` | 추출 결과 (gitignored — 회의 정보 포함) |
 | `credentials.json` | OAuth 패턴용 (사용 시만 / gitignored) |
 | `token.json` | OAuth 패턴 refresh token (자동 생성 / gitignored) |
+
+### Tasks 동작
+Outlook의 미완료 Tasks (`Complete=false`) 중 **due_date가 있는 항목만**
+`[Task] <subject>` 제목의 **all-day event**로 Calendar에 등록됩니다.
+Calendar와 Tasks가 분리되어 있는 게 거슬리면 `run.ps1 -SkipTasks`로 일정만.
 
 ---
 
@@ -83,14 +89,14 @@ cd C:\Users\HHI\Desktop\Workflow automation\infra\scripts\outlook_to_gcal
 ## 일상 운영 (양쪽 공통)
 
 ```powershell
-# 향후 14일 events 동기화 (default Apps Script)
+# 향후 14일 events + tasks (default)
 .\run.ps1
 
 # 향후 30일
 .\run.ps1 -DaysAhead 30
 
-# Tasks도 함께 추출 (등록은 미지원, JSON에만)
-.\run.ps1 -IncludeTasks
+# Tasks 제외 (events만)
+.\run.ps1 -SkipTasks
 
 # 실제 등록 없이 추출만 시뮬레이션
 .\run.ps1 -DryRun
@@ -99,11 +105,34 @@ cd C:\Users\HHI\Desktop\Workflow automation\infra\scripts\outlook_to_gcal
 .\run.ps1 -UseOAuth -CalendarId user@gmail.com
 ```
 
-스케줄링하려면 Windows Task Scheduler:
-- Trigger: 매일 08:00
-- Action: PowerShell -File `<full path>\run.ps1`
-- Apps Script 패턴은 첫 배포 후 무인 실행 OK
-- OAuth 패턴은 첫 OAuth 셋업이 끝나면 무인 실행 OK
+## 자동 실행 (Windows 스케줄러)
+
+[`setup_scheduler.ps1`](setup_scheduler.ps1)이 한 번에 등록해줍니다.
+
+```powershell
+# 30분 간격으로 향후 7일치 동기화 (default)
+.\setup_scheduler.ps1
+
+# 15분 간격, 14일치
+.\setup_scheduler.ps1 -IntervalMinutes 15 -DaysAhead 14
+
+# 등록 해제
+.\setup_scheduler.ps1 -Unregister
+```
+
+### 등록 후 확인
+```powershell
+Get-ScheduledTask -TaskName 'LifeOS-OutlookToGCal'
+Get-ScheduledTaskInfo -TaskName 'LifeOS-OutlookToGCal'   # 마지막 / 다음 실행 시각
+```
+
+### 동작 조건
+- 사용자 로그인 상태에서만 실행 (Outlook COM은 user context 필요)
+- PC sleep 시 다음 깨어났을 때 누락분 1회 catchup (`StartWhenAvailable`)
+- 배터리 모드에서도 실행 (`AllowStartIfOnBatteries`)
+- 실행 시간 5분 초과 시 자동 종료
+- 동시 실행 방지 (`MultipleInstances IgnoreNew`)
+- admin 권한 불필요
 
 ## Idempotency
 
@@ -140,9 +169,45 @@ cd C:\Users\HHI\Desktop\Workflow automation\infra\scripts\outlook_to_gcal
 - 민감 회의는 Outlook의 **Sensitivity = Private/Confidential** 표시 →
   추출 단계에서 필터링 가능 (필요 시 알려주세요, 1줄 추가).
 
+## 다른 PC로 이동 (Migration)
+
+다른 자리·다른 PC로 옮길 때 같은 Apps Script 배포를 그대로 재사용 가능.
+재셋업은 **5분**이면 끝남:
+
+1. 새 PC에 git clone:
+   ```powershell
+   git clone https://github.com/gunwoo2/Workflow-Automation.git
+   cd Workflow-Automation
+   git checkout add-life-os-design
+   ```
+2. 새 PC에 Outlook 데스크탑 클라이언트 설치 + 본인 회사 계정 로그인 (회사
+   PC면 보통 이미 됨)
+3. 레포 루트에 `.env` 파일 생성, 다음 4개 채움 (기존 PC의 `.env`에서 복사):
+   ```
+   GCAL_APPSCRIPT_URL=<기존 배포 URL — 변경 불필요>
+   GCAL_APPSCRIPT_TOKEN=<기존 SHARED_SECRET>
+   NOTION_TOKEN=<기존 토큰>
+   PARENT_PAGE_ID=<기존 ID>
+   ```
+   *.env 자체는 gitignored이라 git으로 못 옮김. USB / 비밀번호 매니저 / 본인 메일
+   첨부로 transit.*
+4. 1회 검증:
+   ```powershell
+   cd infra\scripts\outlook_to_gcal
+   .\run.ps1 -DaysAhead 7 -DryRun
+   ```
+5. 자동 스케줄링:
+   ```powershell
+   .\setup_scheduler.ps1
+   ```
+
+Apps Script 배포는 **클라우드 자원**이라 PC 이동과 무관. Calendar URL+token만
+재사용하면 된다. credentials.json은 OAuth 패턴 사용 시에만 별도 transit
+필요 (default Apps Script 패턴은 .env 4줄로 충분).
+
 ## 다음 단계 (지금은 미구현)
 
-- Tasks → Google Tasks API 등록 (별도 OAuth scope 또는 Apps Script 추가)
 - 양방향 동기화 (Google → Outlook)
 - Life OS Inbox DB 라우팅 — 추출 결과를 노션 Inbox에도 동시 적재
 - Outlook 회의 삭제 시 Google에서 prune
+- Sensitivity = Private 회의 자동 필터링

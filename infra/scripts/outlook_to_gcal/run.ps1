@@ -11,12 +11,14 @@
 
 param(
     [int]$DaysAhead = 14,
-    [switch]$IncludeTasks,
+    [switch]$SkipTasks,        # default: include tasks (opt-out flag)
     [switch]$IncludePastDay,
     [switch]$DryRun,
     [switch]$UseOAuth,
     [string]$CalendarId = "primary"
 )
+
+$IncludeTasks = -not $SkipTasks
 
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path

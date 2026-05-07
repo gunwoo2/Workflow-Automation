@@ -55,16 +55,49 @@ if (-not (Test-Path $JsonPath)) {
 # Read JSON as UTF-8 (preserves Korean characters in payload).
 $body = [System.IO.File]::ReadAllText($JsonPath, [System.Text.Encoding]::UTF8)
 
-# Parse for sanity preview (size, dry-run listing).
 $payload = $body | ConvertFrom-Json
-$evCount = if ($payload.events) { @($payload.events).Count } else { 0 }
+
+# --- Merge Outlook tasks into the events array as [Task] all-day events ---
+# Apps Script Code.gs only knows how to upsert calendar events; tasks with a
+# due_date become single all-day events titled "[Task] <subject>" so they
+# show up alongside meetings on the same calendar grid.
+$taskList = if ($payload.tasks) { @($payload.tasks) } else { @() }
+$taskEvents = @()
+foreach ($t in $taskList) {
+    if (-not $t.due_date) { continue }   # tasks without a due date can't be placed
+    $taskEvents += [ordered]@{
+        outlook_entry_id = "task:" + $t.outlook_entry_id
+        subject          = "[Task] " + $t.subject
+        start            = $t.due_date
+        end              = $t.due_date
+        location         = ""
+        body             = "Outlook Task. importance=$($t.importance) percent_complete=$($t.percent_complete)`n`n$($t.body)"
+        is_all_day       = $true
+        timezone         = "Asia/Seoul"
+    }
+}
+
+# Append converted tasks to the events array, then re-serialize.
+$mergedEvents = @($payload.events) + @($taskEvents)
+$mergedPayload = [ordered]@{
+    extracted_at = $payload.extracted_at
+    range        = $payload.range
+    events_count = $mergedEvents.Count
+    tasks_count  = 0
+    events       = $mergedEvents
+    tasks        = @()
+}
+$body = $mergedPayload | ConvertTo-Json -Depth 8
+
+$evCount   = $mergedEvents.Count
+$taskCount = $taskEvents.Count
 Write-Host "Posting $evCount events to Apps Script Web App..." -ForegroundColor Cyan
 Write-Host "  url:    $WebAppUrl"
-Write-Host "  events: $evCount"
+Write-Host "  events: $evCount  (incl. $taskCount task -> all-day)"
 
 if ($DryRun) {
     Write-Host "  (dry run - skipping POST)" -ForegroundColor Yellow
-    $payload.events | Select-Object -First 5 | ForEach-Object {
+    $mergedEvents | Select-Object -First 8 | ForEach-Object {
         Write-Host ("    [dry] {0}  {1} -> {2}" -f $_.subject, $_.start, $_.end)
     }
     return

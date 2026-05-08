@@ -64,8 +64,13 @@ function doGet(e) {
 
 function _upsertOne(cal, ev, counters) {
   const subject = ev.subject || '(no title)';
-  const start = new Date(ev.start);
-  const end = new Date(ev.end);
+  const isAllDay = !!ev.is_all_day;
+
+  // Date-only strings ("2026-05-08") parse as UTC midnight. For all-day events
+  // we rebuild the Date in the script's local timezone so day-window math and
+  // candidate matching stay consistent with how Calendar stores them.
+  const start = isAllDay ? _parseLocalDate(ev.start) : new Date(ev.start);
+  const end = isAllDay ? _parseLocalDate(ev.end || ev.start) : new Date(ev.end);
 
   const dayStart = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0);
   const dayEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 23, 59, 59);
@@ -75,7 +80,14 @@ function _upsertOne(cal, ev, counters) {
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
     if (c.getTitle() !== subject) continue;
-    if (Math.abs(c.getStartTime().getTime() - start.getTime()) > 60000) continue;
+    if (isAllDay) {
+      // Title + same date + all-day flag is enough — Outlook tasks have
+      // day-level granularity so any time-of-day comparison is meaningless.
+      if (!c.isAllDayEvent()) continue;
+    } else {
+      if (c.isAllDayEvent()) continue;
+      if (Math.abs(c.getStartTime().getTime() - start.getTime()) > 60000) continue;
+    }
     existing = c;
     break;
   }
@@ -86,13 +98,13 @@ function _upsertOne(cal, ev, counters) {
     const loc = ev.location || '';
     if (existing.getDescription() !== desc) { existing.setDescription(desc); changed = true; }
     if (existing.getLocation() !== loc) { existing.setLocation(loc); changed = true; }
-    if (existing.getEndTime().getTime() !== end.getTime()) {
+    if (!isAllDay && existing.getEndTime().getTime() !== end.getTime()) {
       existing.setTime(start, end);
       changed = true;
     }
     if (changed) counters.updCount++; else counters.skipCount++;
   } else {
-    if (ev.is_all_day) {
+    if (isAllDay) {
       cal.createAllDayEvent(subject, start);
     } else {
       cal.createEvent(subject, start, end, {
@@ -102,6 +114,15 @@ function _upsertOne(cal, ev, counters) {
     }
     counters.newCount++;
   }
+}
+
+
+function _parseLocalDate(s) {
+  // Accept "YYYY-MM-DD" or full ISO; return a Date at local-midnight of that day.
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3], 0, 0, 0);
+  const d = new Date(s);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0);
 }
 
 

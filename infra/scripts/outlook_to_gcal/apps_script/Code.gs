@@ -104,13 +104,11 @@ function _upsertOne(cal, ev, counters) {
     }
     if (changed) counters.updCount++; else counters.skipCount++;
   } else {
+    const opts = { description: ev.body || '', location: ev.location || '' };
     if (isAllDay) {
-      cal.createAllDayEvent(subject, start);
+      cal.createAllDayEvent(subject, start, opts);
     } else {
-      cal.createEvent(subject, start, end, {
-        description: ev.body || '',
-        location: ev.location || ''
-      });
+      cal.createEvent(subject, start, end, opts);
     }
     counters.newCount++;
   }
